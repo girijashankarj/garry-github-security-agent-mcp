@@ -12,10 +12,7 @@ export interface RemediationPlan {
   command: string[];
 }
 
-/**
- * Builds a conservative npm remediation plan from GitHub's first patched version.
- * It never invents a version. If GitHub does not provide one, the finding is left unresolved.
- */
+/** Builds a conservative npm remediation plan from GitHub's first patched version. */
 export function planNpm(alert: DependabotAlert): RemediationPlan | null {
   if (alert.dependency?.package?.ecosystem !== "npm") return null;
   const packageName = alert.dependency.package.name;
@@ -34,9 +31,14 @@ export function planNpm(alert: DependabotAlert): RemediationPlan | null {
 
 export async function runCommand(command: string, args: string[], cwd: string) {
   try {
-    const result = await exec(command, args, { cwd, maxBuffer: 2 * 1024 * 1024 });
+    const result = await exec(command, args, { cwd, maxBuffer: 8 * 1024 * 1024 });
     return { command: [command, ...args].join(" "), exitCode: 0, output: `${result.stdout}${result.stderr}` };
   } catch (error: any) {
     return { command: [command, ...args].join(" "), exitCode: error.code ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}${error.message ?? ""}` };
   }
+}
+
+export async function applyNpmPlan(repoDir: string, plan: RemediationPlan) {
+  // execFile avoids shell interpolation. The version is sourced from GitHub's patched-version field.
+  return runCommand("npm", ["install", `${plan.packageName}@${plan.patchedVersion}`, "--save-exact"], repoDir);
 }
