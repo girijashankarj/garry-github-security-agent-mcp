@@ -13,7 +13,8 @@ const required = [
   '.github/workflows/claude-security-audit.yml',
   'scripts/preflight.mjs', 'scripts/audit-security.mjs', 'scripts/remediate-repo.mjs',
   'scripts/verify-repo.mjs', 'scripts/post-change-verify.mjs', 'scripts/finalize-report.mjs',
-  'src/index.ts', 'src/orchestrator.ts', 'src/github.ts', 'src/runtime.ts', 'src/report.ts', 'src/remediation.ts', 'src/pr.ts', 'src/types.ts', 'src/worker.ts'
+  'src/index.ts', 'src/orchestrator.ts', 'src/github.ts', 'src/runtime.ts', 'src/report.ts', 'src/remediation.ts', 'src/pr.ts', 'src/types.ts', 'src/worker.ts',
+  'src/mcp-server.ts'
 ];
 const missing = [];
 for (const file of required) {
@@ -21,7 +22,7 @@ for (const file of required) {
   catch { missing.push(file); }
 }
 const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-const expectedScripts = ['audit', 'build', 'test'];
+const expectedScripts = ['audit', 'mcp', 'mcp:http', 'build', 'test'];
 const missingScripts = expectedScripts.filter(s => !pkg.scripts?.[s]);
 const gitignore = await readFile(resolve(root, '.gitignore'), 'utf8');
 const envIgnored = /(^|\n)\.env(\.|\n|$)/m.test(gitignore) && /(^|\n)\.env\n/m.test(gitignore);
