@@ -30,28 +30,32 @@ async function ask(): Promise<OperatorChoices> {
   return { ...a, repositories: a.scope === "selected" ? a.repositories.split(",").map((x: string) => x.trim()) : [], prMode: a.prMode ?? "draft" };
 }
 
-/** Orchestration only: scripts are the source of truth for collection, remediation and verification. */
+function toCounts(r: any): SecurityCounts {
+  const severity = r.severity ?? {};
+  const dependabot = { critical: severity.critical ?? 0, high: severity.high ?? 0, medium: severity.medium ?? 0, low: severity.low ?? 0 };
+  const codeScanning = r.categories.codeScanning ?? 0;
+  const secretScanning = r.categories.secretScanning ?? 0;
+  return { dependabot, codeScanning, secretScanning, total: Object.values(dependabot).reduce((a, b) => a + b, 0) + codeScanning + secretScanning };
+}
+
+/** Orchestration only: deterministic scripts own collection, remediation and verification. */
 export async function run() {
   const startedAt = new Date().toISOString();
   const operator = await ask();
   const all = await github.repositories();
-  const selected = operator.scope === "all" ? all : all.filter((r) => operator.repositories.includes(r.full_name) || operator.repositories.includes(r.name));
+  const selected = operator.scope === "all" ? all : all.filter(r => operator.repositories.includes(r.full_name) || operator.repositories.includes(r.name));
+  const selectedNames = new Set(selected.map(r => r.full_name));
 
   const baselineRun = await runScript("scripts/audit-security.mjs", [], { GITHUB_OWNER: owner, GITHUB_TOKEN: token });
   if (baselineRun.exitCode !== 0) throw new Error(`Baseline security script failed: ${baselineRun.stderr}`);
   const payload = JSON.parse(baselineRun.stdout);
-  const selectedNames = new Set(selected.map(r => r.full_name));
-  const baseline: RepositoryResult[] = payload.repositories.filter((r: any) => selectedNames.has(r.repository)).map((r: any) => ({
-    repository: r.repository,
-    before: { dependabot: { critical: 0, high: 0, medium: 0, low: 0 }, codeScanning: r.categories.codeScanning ?? 0, secretScanning: r.categories.secretScanning ?? 0, total: (r.categories.dependabot ?? 0) + (r.categories.codeScanning ?? 0) + (r.categories.secretScanning ?? 0) },
-    changes: [], tests: [], status: "skipped" as const, error: r.errors?.join("; "),
-  }));
+  const baseline: RepositoryResult[] = payload.repositories.filter((r: any) => selectedNames.has(r.repository)).map((r: any) => ({ repository: r.repository, before: toCounts(r), changes: [], tests: [], status: "skipped" as const, error: r.errors?.join("; ") }));
   const baselineCounts = emptyCounts(); baseline.forEach(r => addCounts(baselineCounts, r.before));
-  const before: AuditReport = { run: { startedAt, operator, scope: operator.scope }, summary: { repositories: selected.length, critical: 0, high: 0, medium: 0, low: 0, unresolved: baselineCounts.total }, categories: baselineCounts, repositories: baseline };
-  console.log(`Before-action report: ${await writeReport(before)}`);
+  const before: AuditReport = { run: { startedAt, operator, scope: operator.scope }, summary: { repositories: selected.length, critical: baselineCounts.dependabot.critical, high: baselineCounts.dependabot.high, medium: baselineCounts.dependabot.medium, low: baselineCounts.dependabot.low, unresolved: baselineCounts.total }, categories: baselineCounts, repositories: baseline };
+  const beforePath = await writeReport(before);
+  console.log(`Before-action report: ${beforePath}`);
 
   const results: RepositoryResult[] = [];
-  // Hard batch boundary: never launch batch N+1 until all workers in batch N finish.
   for (let offset = 0; offset < selected.length; offset += MAX_WORKERS) {
     const batch = selected.slice(offset, offset + MAX_WORKERS);
     const batchResults = await Promise.all(batch.map(async repo => {
@@ -60,17 +64,25 @@ export async function run() {
         SECURITY_AUDIT_BASE_BRANCH: repo.default_branch, SECURITY_AUDIT_FIX_MODE: operator.fixMode,
         SECURITY_AUDIT_PR_MODE: operator.prMode, SECURITY_AUDIT_COMMIT_MESSAGE: operator.commitMessage,
         SECURITY_AUDIT_RUN_TESTS: String(operator.runTests), SECURITY_AUDIT_INCLUDE_BEFORE_AFTER: String(operator.includeBeforeAfterTable),
+        SECURITY_AUDIT_BEFORE_REPORT: beforePath,
       });
-      if (result.exitCode !== 0) return { repository: repo.full_name, before: baseline.find(r => r.repository === repo.full_name)?.before ?? emptyCounts(), changes: [], tests: [], status: "failed" as const, error: result.stderr };
+      if (result.exitCode !== 0) return { repository: repo.full_name, before: baseline.find(r => r.repository === repo.full_name)?.before ?? emptyCounts(), changes: [], tests: [], status: "failed" as const, error: result.stderr || result.stdout.slice(-4000) };
       return JSON.parse(result.stdout) as RepositoryResult;
     }));
     results.push(...batchResults);
     console.log(`Batch ${Math.floor(offset / MAX_WORKERS) + 1} complete: ${batch.length} repositories`);
   }
 
-  const finalize = await runScript("scripts/finalize-report.mjs", [], { GITHUB_OWNER: owner, GITHUB_TOKEN: token });
-  if (finalize.exitCode !== 0) console.error(`Final verification failed: ${finalize.stderr}`);
-  const afterCounts = emptyCounts(); results.forEach(r => addCounts(afterCounts, r.after ?? r.before));
+  const finalize = await runScript("scripts/finalize-report.mjs", [], { GITHUB_OWNER: owner, GITHUB_TOKEN: token, SECURITY_AUDIT_REPOSITORIES: selected.map(r => r.full_name).join(",") });
+  if (finalize.exitCode !== 0) console.error(`Final security collection failed: ${finalize.stderr}`);
+  const afterPayload = finalize.exitCode === 0 ? JSON.parse(finalize.stdout) : null;
+  const afterByRepo = new Map<string, any>((afterPayload?.repositories ?? []).map((r: any) => [r.repository, r]));
+  const afterCounts = emptyCounts();
+  for (const result of results) {
+    const collected = afterByRepo.get(result.repository);
+    if (collected) result.after = toCounts(collected);
+    addCounts(afterCounts, result.after ?? result.before);
+  }
   const after: AuditReport = { run: { startedAt, completedAt: new Date().toISOString(), operator, scope: operator.scope }, summary: { repositories: selected.length, critical: afterCounts.dependabot.critical, high: afterCounts.dependabot.high, medium: afterCounts.dependabot.medium, low: afterCounts.dependabot.low, unresolved: afterCounts.total }, categories: afterCounts, repositories: results };
   console.log(`After-action report: ${await writeReport(after)}`);
 }
