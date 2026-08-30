@@ -1,0 +1,18 @@
+---
+description: Safe GitHub security audit and dependency remediation
+alwaysApply: true
+---
+
+# Security Audit Rules
+
+- Ask the six operator preflight questions before any repository mutation.
+- Create the before-action report first.
+- Maximum parallel repository workers is 10.
+- Wait for a batch of 10 to finish before starting the next batch.
+- Prefer the smallest stable patched dependency version.
+- Avoid unnecessary major upgrades.
+- Never expose or commit credentials.
+- Never auto-merge a PR.
+- Run relevant tests/build/lint after modifications.
+- Record before/after counts and all failures in the final report.
+- Keep generated reports under `temp/`; never commit them.
