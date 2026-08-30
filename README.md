@@ -55,30 +55,30 @@ START
 The project deliberately separates **reasoning, deterministic execution and safety controls**.
 
 ```text
-                 Claude / Cursor
-                       │
-              ┌────────┼────────┐
-              ▼        ▼        ▼
-           Skills    Agents    Rules
-              │        │        │
-              └────────┼────────┘
-                       ▼
-                TS Orchestrator
-                 sequencing only
-                       │
-          ┌────────────┼────────────┐
-          ▼            ▼            ▼
-       Audit script  Remediation   Verify
-          │            │            │
-          └────────────┼────────────┘
-                       ▼
-                   GitHub API
-                       │
-                       ▼
-                Commit / Pull Request
-                       │
-                       ▼
-                  Re-audit / Report
+                 Claude / Cursor / MCP Client
+                         │
+              ┌──────────┼──────────┐
+              ▼          ▼          ▼
+           Skills      Agents      MCP
+              │          │          │
+              └──────────┼──────────┘
+                         ▼
+                  TS Orchestrator
+                   sequencing only
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+       Audit script   Remediation      Verify
+          │              │              │
+          └──────────────┼──────────────┘
+                         ▼
+                     GitHub API
+                         │
+                         ▼
+                  Commit / Pull Request
+                         │
+                         ▼
+                    Re-audit / Report
 ```
 
 ### Source-of-truth rule
@@ -89,10 +89,101 @@ The TypeScript orchestrator is **not** the source of truth for security operatio
 - **Agents** define repository-specific responsibilities.
 - **Scripts** perform deterministic security collection, remediation and verification.
 - **Hooks** enforce safety and lifecycle gates.
+- **MCP** exposes the deterministic capabilities to compatible AI clients.
 - **Claude/Cursor** provide reasoning where human-like analysis is useful.
 - **GitHub API** is the authoritative source for GitHub security state.
 
-This allows the same workflow to be used from a terminal, Claude Code, Cursor or GitHub Actions without duplicating security logic.
+This allows the same workflow to be used from a terminal, Claude Code, Cursor, an MCP-compatible client or GitHub Actions without duplicating security logic.
+
+## MCP server
+
+The repository can also run as a **Model Context Protocol (MCP) server**. This lets an MCP-compatible client such as Claude Code, Cursor, VS Code or another application consume the security-audit capabilities as tools instead of invoking the CLI directly.
+
+The MCP implementation uses the current split MCP TypeScript SDK v2 packages and supports both **local stdio** and **Streamable HTTP**. citeturn1search0turn1search4
+
+### MCP tools
+
+| Tool | Purpose | Mutates repo? |
+|---|---|---:|
+| `list_repositories` | List accessible active repositories | No |
+| `security_summary` | Current open security counts | No |
+| `dependabot_alerts` | List open Dependabot findings and patched versions | No |
+| `remediation_plan` | Build conservative npm remediation plans | No |
+| `remediate_repository` | Execute the existing deterministic remediation runner | Only with explicit opt-in |
+
+Mutation is **fail-closed**. The server requires both:
+
+1. `execute=true` in the tool call.
+2. `MCP_ALLOW_MUTATIONS=true` in the server environment.
+
+PR mode is the recommended execution mode. The MCP layer does not auto-merge anything.
+
+### Local MCP / stdio
+
+Clone and install the repository:
+
+```bash
+git clone https://github.com/girijashankarj/garry-github-security-audit.git
+cd garry-github-security-audit
+npm install
+cp .env.example .env
+```
+
+Set the GitHub credentials in `.env`, then run:
+
+```bash
+npm run mcp
+```
+
+The process communicates over stdin/stdout. Logs go to stderr so the JSON-RPC protocol channel remains clean, as required by the MCP stdio transport. citeturn2search6turn2search7
+
+For example, an MCP client configuration can launch the local server with:
+
+```json
+{
+  "mcpServers": {
+    "garry-github-security-audit": {
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "cwd": "/path/to/garry-github-security-audit",
+      "env": {
+        "GITHUB_OWNER": "your-github-owner",
+        "GITHUB_TOKEN": "your-github-token"
+      }
+    }
+  }
+}
+```
+
+Never put a real GitHub token in source control or a committed configuration file.
+
+### MCP over HTTP
+
+For a local or separately hosted MCP service:
+
+```bash
+MCP_HOST=127.0.0.1 MCP_PORT=3000 npm run mcp:http
+```
+
+The MCP endpoint is:
+
+```text
+http://127.0.0.1:3000/mcp
+```
+
+The HTTP implementation uses the MCP SDK's `createMcpHandler` and Node adapter with localhost Host/Origin validation. The modern MCP SDK recommends Streamable HTTP for HTTP servers rather than the older SSE transport. citeturn2search5turn1search4
+
+For a remotely hosted deployment, put the service behind HTTPS and add proper authentication/authorisation. Do not expose a mutation-enabled server directly to the public internet.
+
+### MCP Inspector
+
+For local testing, the MCP Inspector can launch the stdio server and expose its tools for manual verification:
+
+```bash
+npx @modelcontextprotocol/inspector npm run mcp
+```
+
+This is useful for verifying tool schemas and responses before connecting Claude Code, Cursor or another MCP client. citeturn2search6
 
 ## Claude integration
 
@@ -166,6 +257,16 @@ SECURITY_AUDIT_PR_MODE=draft
 ```
 
 These are **mock values only**. Do not copy real credentials into source-controlled files.
+
+For MCP, the server also supports:
+
+```env
+MCP_ALLOW_MUTATIONS=false
+MCP_HOST=127.0.0.1
+MCP_PORT=3000
+```
+
+Keep `MCP_ALLOW_MUTATIONS=false` unless an operator deliberately wants MCP to be able to execute approved remediation.
 
 ## GitHub Actions configuration
 
@@ -311,24 +412,37 @@ scripts/
 ├── audit-security.mjs
 ├── remediate-repo.mjs
 ├── verify-repo.mjs
-└── finalize-report.mjs
+├── post-change-verify.mjs
+├── finalize-report.mjs
+└── consistency-check.mjs
+
+src/
+├── mcp-server.ts
+├── orchestrator.ts
+├── github.ts
+├── runtime.ts
+├── report.ts
+├── remediation.ts
+├── pr.ts
+├── types.ts
+└── worker.ts
 ```
 
-Scripts are intentionally reusable outside Claude. This means a community contributor can run the deterministic workflow directly, while Claude Code and Cursor can add agentic reasoning around it.
+Scripts are intentionally reusable outside Claude. This means a community contributor can run the deterministic workflow directly, while Claude Code, Cursor and MCP clients can add agentic reasoning around it.
 
 ## Safety model
 
 ```text
-Agent decides
-     ↓
+Agent / MCP client decides
+          ↓
 Deterministic script executes
-     ↓
+          ↓
 Hook checks lifecycle invariant
-     ↓
+          ↓
 Tests verify repository
-     ↓
+          ↓
 GitHub security state rechecked
-     ↓
+          ↓
 Report records evidence
 ```
 
@@ -342,6 +456,8 @@ Safety rules:
 - Never claim a vulnerability is fixed without verification.
 - Isolate repository failures and continue remaining batches.
 - Keep generated reports out of Git.
+- Keep MCP mutation mode disabled unless explicitly required.
+- Prefer MCP dry-run/planning tools before mutation tools.
 
 ## Development
 
@@ -376,6 +492,18 @@ Run the audit CLI:
 npm run audit
 ```
 
+Run the MCP server over stdio:
+
+```bash
+npm run mcp
+```
+
+Run the MCP server over HTTP:
+
+```bash
+npm run mcp:http
+```
+
 Run deterministic security collection directly:
 
 ```bash
@@ -386,6 +514,12 @@ Run repository verification:
 
 ```bash
 node scripts/verify-repo.mjs
+```
+
+Run repository consistency checks:
+
+```bash
+node scripts/consistency-check.mjs
 ```
 
 ## GitHub Actions
@@ -416,7 +550,8 @@ For community contributions:
 2. Add tests for new remediation logic.
 3. Do not introduce credential handling into source files.
 4. Preserve the 10-worker safety ceiling unless the architecture is deliberately revised.
-5. Update documentation when adding a new execution mode or security category.
+5. Update documentation when adding a new execution mode, MCP tool or security category.
+6. Keep MCP mutation capabilities fail-closed.
 
 ## License
 
