@@ -23,16 +23,20 @@ const output = [];
 
 for (const repo of selected) {
   const base = `/repos/${owner}/${repo.name}`;
-  const result = { repository: repo.full_name, defaultBranch: repo.default_branch, categories: {}, alerts: [] };
+  const result = { repository: repo.full_name, defaultBranch: repo.default_branch, categories: {}, severity: { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 }, alerts: [], errors: [] };
   try {
     const alerts = await api(`${base}/dependabot/alerts?state=open&per_page=100`);
     result.categories.dependabot = alerts.length;
-    result.alerts.push(...alerts.map(a => ({ category:'dependabot', severity:a.security_advisory?.severity ?? 'unknown', package:a.dependency?.package?.name, ghsa:a.security_advisory?.ghsa_id, cve:a.security_advisory?.cve_id, patched:a.security_vulnerability?.first_patched_version?.identifier })));
-  } catch (e) { result.categories.dependabot = null; result.errors = [...(result.errors ?? []), `dependabot: ${e.message}`]; }
+    for (const a of alerts) {
+      const severity = a.security_advisory?.severity ?? 'unknown';
+      result.severity[severity] = (result.severity[severity] ?? 0) + 1;
+      result.alerts.push({ category:'dependabot', severity, package:a.dependency?.package?.name, ghsa:a.security_advisory?.ghsa_id, cve:a.security_advisory?.cve_id, patched:a.security_vulnerability?.first_patched_version?.identifier });
+    }
+  } catch (e) { result.categories.dependabot = null; result.errors.push(`dependabot: ${e.message}`); }
   try { result.categories.codeScanning = (await api(`${base}/code-scanning/alerts?state=open&per_page=100`)).length; }
-  catch (e) { result.categories.codeScanning = null; result.errors = [...(result.errors ?? []), `code-scanning: ${e.message}`]; }
+  catch (e) { result.categories.codeScanning = null; result.errors.push(`code-scanning: ${e.message}`); }
   try { result.categories.secretScanning = (await api(`${base}/secret-scanning/alerts?state=open&per_page=100`)).length; }
-  catch (e) { result.categories.secretScanning = null; result.errors = [...(result.errors ?? []), `secret-scanning: ${e.message}`]; }
+  catch (e) { result.categories.secretScanning = null; result.errors.push(`secret-scanning: ${e.message}`); }
   output.push(result);
 }
 
