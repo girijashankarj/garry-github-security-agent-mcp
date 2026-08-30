@@ -1,0 +1,35 @@
+concurrency:
+  maxParallelRepositories: 10
+  batchMode: true
+
+reports:
+  root: temp/security-count
+  beforePrefix: report
+  afterPrefix: report
+  includeTimestampSeconds: true
+
+security:
+  categories:
+    - dependabot
+    - code-scanning
+    - secret-scanning
+  onlyOpenAlerts: true
+
+changes:
+  defaultFixStrategy: pr
+  defaultPrDraft: true
+  neverAutoMerge: true
+  preferSmallestPatchedStableVersion: true
+  avoidUnnecessaryMajorUpgrades: true
+
+pullRequest:
+  includeBeforeAfterTable: true
+
+tests:
+  detectFromRepository: true
+  runAfterChanges: true
+  stopOnTestFailure: false
+
+failurePolicy:
+  isolateRepositoryFailures: true
+  continueRemainingBatches: true
