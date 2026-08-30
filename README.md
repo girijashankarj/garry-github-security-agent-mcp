@@ -1,28 +1,75 @@
 # GitHub Security Agent MCP
 
-A community-friendly, agentic GitHub security auditing and remediation platform with **CLI, Claude Code, Cursor, GitHub Actions and MCP** interfaces.
+A community-friendly, agentic GitHub security auditing and remediation platform with multiple ways to investigate, plan, fix and verify security issues.
 
-The project can run locally as a CLI or MCP server, or be hosted as an MCP service and consumed by an MCP-compatible AI client or application.
+## Features and ways to use it
+
+This project is intentionally not a single security script. The same security issue can be handled through different interfaces depending on how much automation, AI reasoning or integration you need.
+
+| Capability | What it provides | Best for |
+|---|---|---|
+| **Claude Code** | Interactive agentic security analysis and remediation | Local developers |
+| **Claude Code `-p`** | Non-interactive Claude execution | CI/CD and automation |
+| **Claude Skills** | Reusable security-audit workflow instructions | Consistent agent behaviour |
+| **Claude Agents** | Dedicated repository, testing and review roles | Multi-agent remediation |
+| **Claude Hooks** | Pre-change and post-change safety gates | Controlled changes |
+| **Cursor Rules** | Security workflow guidance inside Cursor | Cursor development |
+| **Cursor Skills** | Reusable Cursor security workflows | Agentic Cursor automation |
+| **MCP Server** | Exposes security capabilities as MCP tools | AI clients and applications |
+| **MCP stdio** | Local MCP process integration | Desktop/local clients |
+| **MCP Streamable HTTP** | MCP as a network service | Internal/remote integrations |
+| **GitHub Actions / Claude CI** | Automated security workflows in GitHub | Team CI/CD |
+| **Claude Batch API** | Async analysis at larger scale | Many repositories |
+| **CLI / TypeScript** | Deterministic orchestration without AI | Scripts and automation |
+| **Deterministic scripts** | Audit, remediation, verification and reporting | Reproducible execution |
+| **Parallel repository agents** | Maximum 10 active repository workers | Multi-repository audits |
+| **Before/after reports** | Auditable security evidence | Review/compliance |
+| **PR or direct fix** | Operator-controlled delivery | Change-management policies |
+| **Stable patch strategy** | Conservative patched-version selection | Safer dependency fixes |
+| **Test/build/lint verification** | Post-change validation | Regression prevention |
+
+### Multiple ways to tackle the same security issue
+
+```text
+                         GitHub Security Issue
+                                  │
+             ┌────────────────────┼────────────────────┐
+             │                    │                    │
+             ▼                    ▼                    ▼
+        Claude Code           Cursor              MCP Client
+             │                    │                    │
+             └────────────────────┼────────────────────┘
+                                  ▼
+                         Security Skills / Agents
+                                  │
+                     ┌────────────┼────────────┐
+                     ▼            ▼            ▼
+                  Hooks        Scripts       CI
+                     │            │            │
+                     └────────────┼────────────┘
+                                  ▼
+                          Deterministic Worker
+                                  │
+                       ┌──────────┴──────────┐
+                       ▼                     ▼
+                  Fix / PR              Verify
+                       │                     │
+                       └──────────┬──────────┘
+                                  ▼
+                           Security Re-audit
+                                  │
+                                  ▼
+                            Before / After
+                               Report
+```
+
+You can use the project as a **local developer tool, AI-agent workflow, GitHub CI automation, MCP server, or combination of these**.
 
 ## What it does
 
 GitHub security alerts tell you that a problem exists. This project takes the next step: **understand the finding, choose a conservative stable fix, verify it, and leave an auditable result**.
 
-It supports:
-
-- Dependabot alerts
-- Code scanning / CodeQL alerts
-- Secret scanning alerts
-- Stable dependency remediation
-- Automated tests/build/lint verification
-- Direct fixes or pull requests
-- Draft or ready-for-review PRs
-- Before/after security reports
-- Maximum 10 parallel repository workers
-- Claude Code and Claude `-p`
-- Claude Batch API integration boundary
-- Cursor rules and agent workflows
-- MCP stdio and Streamable HTTP
+It supports Dependabot, code scanning / CodeQL, secret scanning, stable dependency remediation, automated verification, direct fixes or PRs, draft/ready PRs, reports and bounded parallel repository workers.
 
 The project is designed for individuals, teams, organisations and the wider developer community. It is not tied to a particular GitHub account.
 
@@ -93,34 +140,8 @@ git clone https://github.com/girijashankarj/garry-github-security-agent-mcp.git
 cd garry-github-security-agent-mcp
 npm install
 cp .env.example .env
-```
-
-Set real credentials in `.env`, then:
-
-```bash
 npm run mcp
 ```
-
-Example client configuration:
-
-```json
-{
-  "mcpServers": {
-    "github-security-agent": {
-      "command": "npm",
-      "args": ["run", "mcp"],
-      "cwd": "/path/to/garry-github-security-agent-mcp",
-      "env": {
-        "GITHUB_OWNER": "your-github-owner",
-        "GITHUB_TOKEN": "your-github-token",
-        "MCP_ALLOW_MUTATIONS": "false"
-      }
-    }
-  }
-}
-```
-
-Never commit real credentials.
 
 ### MCP over Streamable HTTP
 
@@ -142,8 +163,6 @@ For remote hosting, use HTTPS and authentication/authorisation. Do not expose mu
 npx @modelcontextprotocol/inspector npm run mcp
 ```
 
-Use Inspector to verify tool schemas and responses before connecting an AI client.
-
 ## Claude integration
 
 Claude is optional. The deterministic security engine works without Anthropic access.
@@ -162,7 +181,7 @@ claude -p "Run the security audit workflow defined by this repository. Follow ap
 
 ### Claude Batch API
 
-For large repository sets:
+For large repository sets, use Batch as an analysis/planning layer:
 
 ```text
 Repositories → Claude Batch API → remediation plans
@@ -196,7 +215,7 @@ MCP_PORT=3000
 
 `.env` is gitignored. Never commit credentials.
 
-## GitHub Actions
+## GitHub Actions / Claude CI
 
 Sensitive values belong in **GitHub Actions Secrets**:
 
