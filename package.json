@@ -1,8 +1,8 @@
 {
-  "name": "garry-github-security-audit",
+  "name": "github-security-agent-mcp",
   "version": "0.1.0",
   "private": false,
-  "description": "Community-friendly, agentic GitHub security audit and remediation tool with CLI, MCP, reports, PRs, tests, and audit trails.",
+  "description": "Community-friendly, agentic GitHub security auditing and remediation platform with CLI, MCP, Claude Code, Cursor, reports, PRs, tests, and audit trails.",
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
