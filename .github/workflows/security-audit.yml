@@ -1,0 +1,71 @@
+name: Security Audit Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "all or comma-separated repositories"
+        required: true
+        default: "all"
+      fix_mode:
+        description: "default-branch or pr"
+        required: true
+        default: "pr"
+      pr_mode:
+        description: "draft or ready"
+        required: true
+        default: "draft"
+      commit_message:
+        description: "Commit message format"
+        required: true
+        default: "fix(security): remediate vulnerabilities"
+      run_tests:
+        description: "Run detected tests"
+        required: true
+        default: "true"
+      confirm:
+        description: "Type YES to allow remediation"
+        required: true
+        default: "NO"
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: read
+  actions: read
+
+concurrency:
+  group: security-audit-agent
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: inputs.confirm == 'YES'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout orchestrator
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run build
+
+      - name: Run security audit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          AUDIT_SCOPE: ${{ inputs.scope }}
+          AUDIT_FIX_MODE: ${{ inputs.fix_mode }}
+          AUDIT_PR_MODE: ${{ inputs.pr_mode }}
+          AUDIT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
+          AUDIT_RUN_TESTS: ${{ inputs.run_tests }}
+        run: npm run audit
