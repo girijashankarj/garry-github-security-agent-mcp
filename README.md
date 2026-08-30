@@ -2,6 +2,8 @@
 
 A community-friendly, agentic GitHub security auditing and remediation platform with multiple ways to investigate, plan, fix and verify security issues.
 
+> **Future roadmap:** See [FUTURE_PLAN.md](./FUTURE_PLAN.md) for the planned AI-assisted security evaluation pipeline, including LLM analysis, remediation planning, deterministic execution, verification, LLM-as-Judge evaluation and quality/safety scoring.
+
 ## Features and ways to use it
 
 This project is intentionally not a single security script. The same security issue can be handled through different interfaces depending on how much automation, AI reasoning or integration you need.
