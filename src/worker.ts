@@ -28,17 +28,8 @@ async function secureGit(repoDir: string, args: string[]) {
     cwd: repoDir,
     timeout: 120_000,
     maxBuffer: 8 * 1024 * 1024,
-    env: {
-      ...process.env,
-      GIT_CONFIG_COUNT: "1",
-      GIT_CONFIG_KEY_0: "http.extraheader",
-      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
-    },
+    env: { ...process.env, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.extraheader", GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}` },
   });
-}
-
-async function clone(owner: string, repo: string, base: string, dir: string) {
-  await secureGit(dir, ["clone", "--depth", "1", "--branch", base, `https://github.com/${owner}/${repo}.git`, dir]);
 }
 
 export async function processRepository(options: WorkerOptions): Promise<RepositoryResult> {
@@ -48,13 +39,10 @@ export async function processRepository(options: WorkerOptions): Promise<Reposit
   const npmPlans = alerts.map(planNpm).filter((x): x is NonNullable<typeof x> => Boolean(x));
   if (npmPlans.length === 0) return { repository: fullName, before, changes: [], tests: [], status: "skipped" };
 
-  const dir = await mkdtemp(join(tmpdir(), "github-security-audit-"));
+  const parent = await mkdtemp(join(tmpdir(), "github-security-audit-parent-"));
+  const cloneDir = join(parent, options.repo);
   const branch = `security-audit/${Date.now()}-${options.repo}`;
   try {
-    // Clone into an existing empty directory using its parent as cwd.
-    await rm(dir, { recursive: true, force: true });
-    const parent = await mkdtemp(join(tmpdir(), "github-security-audit-parent-"));
-    const cloneDir = join(parent, options.repo);
     await secureGit(parent, ["clone", "--depth", "1", "--branch", options.base, `https://github.com/${options.owner}/${options.repo}.git`, cloneDir]);
     if (options.fixMode === "pr") await exec("git", ["switch", "-c", branch], { cwd: cloneDir });
 
@@ -86,8 +74,8 @@ export async function processRepository(options: WorkerOptions): Promise<Reposit
     let pullRequest: string | undefined;
 
     if (options.fixMode === "pr") {
-      const table = changes.map((change) => `| ${change} | patched | Security fix | ${tests.every(t => t.exitCode === 0) ? "passed" : "not run"} |`).join("\n");
-      const body = `${options.includeBeforeAfterTable ? `## Before / After\n\n| Package | Change | Reason | Test |\n|---|---|---|---|\n${table}\n\n` : ""}Automated security remediation.\n\nSecurity findings before: ${before.total}. After: ${after.total}.\n\nNo auto-merge is performed.`;
+      const rows = changes.map((change) => `| ${change} | patched | Security fix | ${tests.every(t => t.exitCode === 0) ? "passed" : "not run"} |`).join("\n");
+      const body = `${options.includeBeforeAfterTable ? `## Before / After\n\n| Package / Change | Result | Reason | Test |\n|---|---|---|---|\n${rows}\n\n` : ""}Automated security remediation.\n\nSecurity findings before: ${before.total}. After: ${after.total}.\n\nNo auto-merge is performed.`;
       const pr = await options.github.pullRequest(options.repo, branch, options.base, `fix(security): remediate ${options.repo}`, body, options.prMode === "draft");
       pullRequest = pr.data.html_url;
     }
@@ -96,6 +84,6 @@ export async function processRepository(options: WorkerOptions): Promise<Reposit
   } catch (error) {
     return { repository: fullName, before, changes: [], tests: [], status: "failed", error: String(error) };
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(parent, { recursive: true, force: true });
   }
 }
