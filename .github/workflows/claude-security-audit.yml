@@ -6,7 +6,7 @@ on:
       mode:
         description: 'Execution mode'
         required: true
-        default: 'claude-code'
+        default: 'deterministic'
         type: choice
         options:
           - claude-code
@@ -40,7 +40,16 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
+
+      - name: Repository consistency check
+        run: node scripts/consistency-check.mjs
+
+      - name: Type check
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
 
       - name: Baseline security audit
         run: node scripts/audit-security.mjs > baseline-security.json
@@ -50,7 +59,7 @@ jobs:
         run: |
           if ! command -v claude >/dev/null 2>&1; then
             echo 'Claude Code CLI is not installed on this runner.'
-            echo 'Install/pin the Claude Code CLI in this step according to your organisation policy.'
+            echo 'Install and pin the Claude Code CLI according to your organisation policy.'
             exit 1
           fi
           claude -p "Use this repository's security-audit skill and configuration. Read baseline-security.json. Follow the operator-approved workflow. Use deterministic scripts for GitHub operations and verification. Never expose credentials and never auto-merge." --max-turns 30
@@ -59,11 +68,12 @@ jobs:
         if: ${{ inputs.mode == 'deterministic' }}
         run: npm run audit
 
-      - name: Batch mode placeholder
+      - name: Batch mode boundary
         if: ${{ inputs.mode == 'batch' }}
         run: |
-          echo 'Batch mode requires ANTHROPIC_BATCH_ENABLED=true and an approved Batch API adapter.'
-          echo 'This repository intentionally does not send batch requests until that adapter is configured.'
+          echo 'Batch mode is an adapter boundary.'
+          echo 'Implement and configure the approved Anthropic Batch API adapter before enabling unattended batch execution.'
+          exit 1
 
       - name: Upload baseline report
         uses: actions/upload-artifact@v4
